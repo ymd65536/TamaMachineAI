@@ -494,7 +494,7 @@ async function saveCurrentGame() {
 
 async function askCopilot() {
   const current = await fetchState();
-  const question = 'マサチカさんの次の一言を、ヒロインとの会話の流れを踏まえて、実用的なアドバイスとして1〜2文で提案してください。';
+  const question = logistics.freeTalkInput.value.trim() || 'マサチカさんの次の一言を、ヒロインとの会話の流れを踏まえて、実用的なアドバイスとして1〜2文で提案してください。';
   const response = await fetch(`/api/copilot-ask?documentId=${encodeURIComponent(state.documentId)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -503,8 +503,14 @@ async function askCopilot() {
   const json = await response.json();
   current.copilotBridge = json.copilotBridge || {
     status: 'answered',
-    answer: 'マサチカさんなら、まずは「こんにちは。少しだけ緊張してますが、ちゃんと話を聞きます」と伝えると安心感が出ます。初対面では、分析よりも相手の警戒を下げる一言を先に投げるほうが、会話が滑りやすくなります。'
+    question,
+    answer: 'マサチカさんなら、まずは「こんにちは。少しだけ緊張してますが、ちゃんと話を聞きます」と伝えると安心感が出ます。初対面では、分析よりも相手の警戒を下げる一言を先に投げるほうが、会話が滑りやすくなります。',
+    mode: 'freeTalk',
+    speaker: 'Copilot'
   };
+  current.game.scene = 'freeTalk';
+  current.heroine.currentLine = current.copilotBridge.answer;
+  current.heroine.memory.history.push({ speaker: 'Copilot', text: current.copilotBridge.answer, scene: 'freeTalk' });
   await saveState(current);
   await render();
 }
@@ -514,19 +520,21 @@ async function sendFreeTalk() {
   if (!text) return;
 
   const current = await fetchState();
+  const response = await fetch(`/api/copilot-ask?documentId=${encodeURIComponent(state.documentId)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question: text })
+  });
+  const json = await response.json();
+  const reply = (json.copilotBridge && json.copilotBridge.answer) || '……その話、ちゃんと聞いています。少しずつ、あなたのことを知りたいです。';
+
   current.game.scene = 'freeTalk';
-  current.heroine.currentLine = text;
-  current.heroine.memory.history.push({ speaker: 'マサチカ', text, scene: 'freeTalk' });
-  const reply = text.toLowerCase().includes('hello')
-    ? 'Hello？　えっと、あの…挨拶ならちゃんと返します。まだ会話の練習中なので、もう少しゆっくり話してもらえますか？'
-    : text.toLowerCase().includes('仕事') || text.toLowerCase().includes('技術')
-      ? '……その話なら、ちょっとだけあなたのことが見えてきました。技術好きって、結構、素敵です。'
-      : '……それだけ伝えてくれれば、かなり話しやすいです。ちゃんと聞いてますよ。';
   current.heroine.currentLine = reply;
+  current.heroine.memory.history.push({ speaker: 'マサチカ', text, scene: 'freeTalk' });
   current.heroine.affection = (current.heroine.affection || 0) + 1;
   current.heroine.knowledge = (current.heroine.knowledge || 0) + 1;
   current.heroine.memory.history.push({ speaker: 'AIヒロイン', text: reply, scene: 'freeTalk' });
-  current.copilotBridge = { status: 'answered', answer: reply, mode: 'freeTalk', speaker: 'heroine' };
+  current.copilotBridge = { ...(json.copilotBridge || {}), status: 'answered', answer: reply, mode: 'freeTalk', speaker: 'Copilot' };
   await saveState(current);
   logistics.freeTalkInput.value = '';
   await render();
