@@ -68,7 +68,16 @@ const retryIntroLines = [
 const heroineLines = [
   'こんにちは。',
   '……マサチカさん、ですよね？',
-  'うわっ！なんだこれ！？',
+  'きたぞ。。。',
+  '私はまだ、ほとんど何も知りません。',
+  'だから、いろいろ教えてください。',
+  'ちゃんと育ててくださいね？'
+];
+
+const retryHeroineLines = [
+  'どうされましたか？',
+  '……マサチカさん、ですよね？',
+  'きたぞ。。。',
   '私はまだ、ほとんど何も知りません。',
   'だから、いろいろ教えてください。',
   'ちゃんと育ててくださいね？'
@@ -134,8 +143,11 @@ async function saveState(nextState, documentId = state.documentId) {
 }
 
 function currentIntroLines(nextState) {
-  const retryIntro = Boolean(nextState?.game?.retryIntro || nextState?.heroine?.ending === 'bad');
-  return retryIntro ? retryIntroLines : introLines;
+  return nextState?.game?.retryIntro === true ? retryIntroLines : introLines;
+}
+
+function currentHeroineLines(nextState) {
+  return nextState?.game?.retryIntro === true ? retryHeroineLines : heroineLines;
 }
 
 function computeCurrentLine(nextState) {
@@ -145,7 +157,8 @@ function computeCurrentLine(nextState) {
     return intro[nextState.game.introIndex] ?? intro[intro.length - 1];
   }
   if (scene === 'heroine') {
-    return heroineLines[nextState.game.heroineIntroIndex] ?? heroineLines[heroineLines.length - 1];
+    const heroine = currentHeroineLines(nextState);
+    return heroine[nextState.game.heroineIntroIndex] ?? heroine[heroine.length - 1];
   }
   if (scene === 'hub') {
     return hubLines[nextState.game.hubIndex] ?? hubLines[hubLines.length - 1];
@@ -324,7 +337,7 @@ async function startNewGame(forceRetryIntro = false) {
     { speaker: '主人公', text: intro[0], scene: 'intro' },
     { speaker: '主人公', text: intro[1], scene: 'intro' }
   ];
-  nextState.heroine.ending = forceRetryIntro ? 'bad' : null;
+  nextState.heroine.ending = null;
   await saveState(nextState, state.documentId);
   state.current = nextState;
   await render();
@@ -342,8 +355,9 @@ async function advanceStory() {
       current.game.heroineIntroIndex = 0;
     }
   } else if (scene === 'heroine') {
+    const heroine = currentHeroineLines(current);
     current.game.heroineIntroIndex += 1;
-    if (current.game.heroineIntroIndex >= heroineLines.length) {
+    if (current.game.heroineIntroIndex >= heroine.length) {
       current.game.scene = 'hub';
       current.game.chapter = 1;
       current.game.hubIndex = 0;
