@@ -250,6 +250,15 @@ button {
   border-radius: 999px;
 }
 
+.primary-button:disabled,
+.primary-button.is-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: grayscale(0.2);
+  box-shadow: none;
+  transform: none;
+}
+
 .status-panel {
   padding: 14px 16px;
 }

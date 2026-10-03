@@ -56,7 +56,7 @@ const defaultState = {
 
 const introLines = [
   '俺はマサチカ。都内のエンジニアだ。',
-  '普通の男だ。女の子と話せる。',
+  'どこにでもいる一般男性だ。',
   'ただ、恋愛だけは、たぶん、構造化できない。',
   'それだけだ。'
 ];
@@ -86,9 +86,16 @@ const retryHeroineLines = [
 
 const hubLines = [
   'JAZUG 16周年……やっと、ここからが本番みたいだ。マサチカさんの顔、少しだけ緊張してるみたいですね。',
-  'でも、マサチカさんのことを、ちゃんと観察している。',
+  'この場にいるあなたの気配、なぜか少しだけ、安心できる気がします。',
   'それが、今の私の一番大きな特徴かもしれません。'
 ];
+
+const hubChoiceLines = {
+  talk: 'JAZUG 16周年……やっと、ここからが本番みたいだ。あなたと話すと、少しだけ心が安定する気がします。',
+  observe: 'この場にいるあなたの気配、なぜか少しだけ、安心できる気がします。',
+  analyze: '……分析してるだけじゃ、あなたのことをちゃんと見られないかもしれません。',
+  erase: '……それを言うと、私の気持ちを消してしまうような気がします。'
+};
 
 const logistics = {
   titleScreen: document.getElementById('titleScreen'),
@@ -164,12 +171,18 @@ function computeCurrentLine(nextState) {
     return intro[nextState.game.introIndex] ?? intro[intro.length - 1];
   }
   if (scene === 'heroine') {
+    if (nextState.game.retryIntro !== true && nextState.game.heroineIntroIndex === 0) {
+      return 'うわ、なんだこれ！！';
+    }
     const heroine = currentHeroineLines(nextState);
     const base = heroine[nextState.game.heroineIntroIndex] ?? heroine[heroine.length - 1];
     return machineLoveText(base, nextState.heroine.affection);
   }
   if (scene === 'hub') {
-    const base = hubLines[nextState.game.hubIndex] ?? hubLines[hubLines.length - 1];
+    const choiceKey = nextState.game.currentChoice;
+    const base = choiceKey
+      ? (hubChoiceLines[choiceKey] ?? hubLines[(nextState.game.hubIndex ?? 0) % hubLines.length])
+      : hubLines[(nextState.game.hubIndex ?? 0) % hubLines.length] ?? hubLines[hubLines.length - 1];
     return machineLoveText(base, nextState.heroine.affection);
   }
   if (scene === 'meeting') {
@@ -255,16 +268,33 @@ function renderChoiceList(stateData) {
         current.heroine.trust += 3;
         current.heroine.yamadaUnderstanding += 2;
       }
+      current.game.currentChoice = item.id;
       current.game.scene = 'meeting';
       current.game.meetingIndex = 0;
       current.heroine.memory.history.push({ speaker: 'マサチカ', text: item.label, scene: 'hub' });
+      const eraseLine = 'お前を消す方法、何調べているんですか！最低！！';
       current.heroine.currentLine = item.id === 'talk'
         ? '……話してくれると少しだけ安心します。あなたの話し方、意外と落ち着いてます。'
         : item.id === 'observe'
           ? '……観察されてるって、気にしてるんですか？でも、ちゃんと見てくれてるのは悪くないです。'
           : item.id === 'erase'
-            ? 'お前を消す方法、何調べているんですか！最低！！'
+            ? eraseLine
             : '……その整理癖、ちょっと面白いですね。たぶん、恋愛の前に人を見てるんです。';
+      if (item.id === 'erase') {
+        current.game.forceBadEnd = true;
+        current.game.scene = 'meeting';
+        current.game.meetingIndex = 0;
+        await saveState(current);
+        await render();
+        setTimeout(async () => {
+          const latest = await fetchState();
+          latest.game.scene = 'ending';
+          latest.heroine.ending = 'bad';
+          await saveState(latest);
+          await render();
+        }, 5000);
+        return;
+      }
       await saveState(current);
       await render();
     });
@@ -275,9 +305,17 @@ function renderChoiceList(stateData) {
 function renderScene(stateData) {
   const scene = stateData.game.scene;
   const onTitle = scene === 'title';
+  const nextButton = document.getElementById('nextBtn');
+  const hasChoicePrompt = scene === 'hub';
+
   logistics.titleScreen.classList.toggle('hidden', !onTitle);
   logistics.gameScreen.classList.toggle('hidden', onTitle || scene === 'ending');
   logistics.endingScreen.classList.toggle('hidden', scene !== 'ending');
+  if (nextButton) {
+    nextButton.disabled = hasChoicePrompt;
+    nextButton.textContent = hasChoicePrompt ? '選択中' : 'Next';
+    nextButton.classList.toggle('is-disabled', hasChoicePrompt);
+  }
 
   if (scene === 'ending') {
     const happy = stateData.game.forceBadEnd === true ? false : stateData.heroine.affection >= 5;
@@ -305,7 +343,7 @@ function renderDialogue(stateData) {
   if (scene === 'intro') {
     logistics.speakerName.textContent = '主人公';
   } else if (scene === 'heroine') {
-    logistics.speakerName.textContent = 'AIヒロイン';
+    logistics.speakerName.textContent = stateData.game.retryIntro === true || stateData.game.heroineIntroIndex > 0 ? 'AIヒロイン' : '主人公';
   } else if (scene === 'hub' || scene === 'meeting') {
     logistics.speakerName.textContent = 'AIヒロイン';
   } else if (scene === 'freeTalk') {
@@ -406,7 +444,8 @@ async function advanceStory() {
         current.heroine.ending = current.game.forceBadEnd === true ? 'bad' : (current.heroine.affection >= 5 ? 'happy' : 'bad');
       } else {
         current.game.scene = 'hub';
-        current.game.hubIndex = 0;
+        current.game.currentChoice = null;
+        current.game.hubIndex = (current.game.hubIndex || 0) + 1;
         current.game.round = currentRound + 1;
         current.game.meetingIndex = 0;
       }
