@@ -39,7 +39,8 @@ const defaultState = {
     hubIndex: 0,
     meetingIndex: 0,
     currentChoice: null,
-    dreamLoop: false
+    dreamLoop: false,
+    retryIntro: false
   },
   copilotBridge: {
     status: 'idle',
@@ -54,19 +55,14 @@ const defaultState = {
 
 const introLines = [
   '俺はマサチカ。都内のエンジニアだ。',
-  'どこにでもいる、ごく普通の一般男性だ。',
-  'もちろん彼女はいない。',
-  '……いや、待て。',
-  '『もちろん』というのはおかしい。',
-  '彼女がいたことはある。今はいないというだけだ。',
-  '仕事では後輩の指導もする。',
-  '男女問わず普通に話すし、この業界では珍しいのか、知人には女性も結構いる。',
-  'つまり女性と話せないわけではない。',
-  'ではなぜ彼女がいないのか。',
-  '……。',
-  'それが分かっていたら苦労していない。',
-  '……',
-  'そうだ。恋愛は、たぶん、構造化できないからだ。'
+  '普通の男だ。女の子と話せる。',
+  'ただ、恋愛だけは、たぶん、構造化できない。',
+  'それだけだ。'
+];
+
+const retryIntroLines = [
+  'ハッ！！！俺はまたJAZUGを繰り返すのか。これで16周年だ',
+  ...introLines
 ];
 
 const heroineLines = [
@@ -79,7 +75,7 @@ const heroineLines = [
 ];
 
 const hubLines = [
-  '……やっと、ここからが本番みたいだ。マサチカさんの顔、少しだけ緊張してるみたいですね。',
+  'JAZUG 16周年……やっと、ここからが本番みたいだ。マサチカさんの顔、少しだけ緊張してるみたいですね。',
   'でも、マサチカさんのことを、ちゃんと観察している。',
   'それが、今の私の一番大きな特徴かもしれません。'
 ];
@@ -137,10 +133,16 @@ async function saveState(nextState, documentId = state.documentId) {
   });
 }
 
+function currentIntroLines(nextState) {
+  const retryIntro = Boolean(nextState?.game?.retryIntro || nextState?.heroine?.ending === 'bad');
+  return retryIntro ? retryIntroLines : introLines;
+}
+
 function computeCurrentLine(nextState) {
   const scene = nextState.game.scene;
   if (scene === 'intro') {
-    return introLines[nextState.game.introIndex] ?? introLines[introLines.length - 1];
+    const intro = currentIntroLines(nextState);
+    return intro[nextState.game.introIndex] ?? intro[intro.length - 1];
   }
   if (scene === 'heroine') {
     return heroineLines[nextState.game.heroineIntroIndex] ?? heroineLines[heroineLines.length - 1];
@@ -311,15 +313,18 @@ function setFlash(message) {
   logistics.statusFlash.classList.add('status-pop');
 }
 
-async function startNewGame() {
+async function startNewGame(forceRetryIntro = false) {
   const nextState = structuredClone(defaultState);
   state.documentId = DEFAULT_DOCUMENT_ID;
+  const intro = forceRetryIntro ? retryIntroLines : introLines;
   nextState.game.scene = 'intro';
   nextState.game.chapter = 0;
+  nextState.game.retryIntro = forceRetryIntro;
   nextState.heroine.memory.history = [
-    { speaker: '主人公', text: introLines[0], scene: 'intro' },
-    { speaker: '主人公', text: introLines[1], scene: 'intro' }
+    { speaker: '主人公', text: intro[0], scene: 'intro' },
+    { speaker: '主人公', text: intro[1], scene: 'intro' }
   ];
+  nextState.heroine.ending = forceRetryIntro ? 'bad' : null;
   await saveState(nextState, state.documentId);
   state.current = nextState;
   await render();
@@ -330,8 +335,9 @@ async function advanceStory() {
   const scene = current.game.scene;
 
   if (scene === 'intro') {
+    const intro = currentIntroLines(current);
     current.game.introIndex += 1;
-    if (current.game.introIndex >= introLines.length) {
+    if (current.game.introIndex >= intro.length) {
       current.game.scene = 'heroine';
       current.game.heroineIntroIndex = 0;
     }
@@ -462,7 +468,7 @@ function bindEvents() {
   document.getElementById('sendFreeTalkBtn').addEventListener('click', sendFreeTalk);
   document.getElementById('historyBtn').addEventListener('click', () => logistics.historyPanel.classList.toggle('hidden'));
   document.getElementById('historyCloseBtn').addEventListener('click', () => logistics.historyPanel.classList.add('hidden'));
-  document.getElementById('endingRetryBtn').addEventListener('click', startNewGame);
+  document.getElementById('endingRetryBtn').addEventListener('click', () => startNewGame(true));
   document.getElementById('endingTopBtn').addEventListener('click', async () => {
     const current = await fetchState();
     current.game.scene = 'title';
