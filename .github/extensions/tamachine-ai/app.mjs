@@ -69,7 +69,7 @@ const retryIntroLines = [
 const heroineLines = [
   'こんにちは。',
   '……マサチカさん、ですよね？',
-  'きたぞ。。。',
+  'あ、そう。',
   '私はまだ、ほとんど何も知りません。',
   'だから、いろいろ教えてください。',
   'ちゃんと育ててくださいね？'
@@ -78,7 +78,7 @@ const heroineLines = [
 const retryHeroineLines = [
   'どうされましたか？',
   '……マサチカさん、ですよね？',
-  'きたぞ。。。',
+  'あ、そう。',
   '私はまだ、ほとんど何も知りません。',
   'だから、いろいろ教えてください。',
   'ちゃんと育ててくださいね？'
@@ -173,6 +173,9 @@ function computeCurrentLine(nextState) {
   if (scene === 'heroine') {
     if (nextState.game.retryIntro !== true && nextState.game.heroineIntroIndex === 0) {
       return 'うわ、なんだこれ！！';
+    }
+    if (nextState.game.heroineIntroIndex === 2) {
+      return 'きたぞ。。。';
     }
     const heroine = currentHeroineLines(nextState);
     const base = heroine[nextState.game.heroineIntroIndex] ?? heroine[heroine.length - 1];
@@ -343,7 +346,7 @@ function renderDialogue(stateData) {
   if (scene === 'intro') {
     logistics.speakerName.textContent = '主人公';
   } else if (scene === 'heroine') {
-    logistics.speakerName.textContent = stateData.game.retryIntro === true || stateData.game.heroineIntroIndex > 0 ? 'AIヒロイン' : '主人公';
+    logistics.speakerName.textContent = stateData.game.retryIntro === true || stateData.game.heroineIntroIndex > 0 ? '主人公' : '主人公';
   } else if (scene === 'hub' || scene === 'meeting') {
     logistics.speakerName.textContent = 'AIヒロイン';
   } else if (scene === 'freeTalk') {
@@ -436,6 +439,9 @@ async function advanceStory() {
       current.game.meetingIndex = 0;
     }
   } else if (scene === 'meeting') {
+    if (current.heroine.currentLine) {
+      current.heroine.currentLine = null;
+    }
     current.game.meetingIndex += 1;
     if (current.game.meetingIndex >= 3) {
       const currentRound = current.game.round || 1;
