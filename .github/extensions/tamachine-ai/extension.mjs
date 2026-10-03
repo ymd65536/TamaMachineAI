@@ -46,7 +46,8 @@ const defaultState = {
     hubIndex: 0,
     meetingIndex: 0,
     currentChoice: null,
-    dreamLoop: false
+    dreamLoop: false,
+    forceBadEnd: false
   },
   copilotBridge: {
     status: 'idle',

@@ -40,7 +40,8 @@ const defaultState = {
     meetingIndex: 0,
     currentChoice: null,
     dreamLoop: false,
-    retryIntro: false
+    retryIntro: false,
+    forceBadEnd: false
   },
   copilotBridge: {
     status: 'idle',
@@ -150,6 +151,12 @@ function currentHeroineLines(nextState) {
   return nextState?.game?.retryIntro === true ? retryHeroineLines : heroineLines;
 }
 
+function machineLoveText(baseText, affection) {
+  if ((affection || 0) < 12) return baseText;
+  const binary = '0101101001010110';
+  return `${binary}… 1と0で、あなたのことを認識してる。0で照れて、1で心が動いてる。${baseText}`;
+}
+
 function computeCurrentLine(nextState) {
   const scene = nextState.game.scene;
   if (scene === 'intro') {
@@ -158,24 +165,31 @@ function computeCurrentLine(nextState) {
   }
   if (scene === 'heroine') {
     const heroine = currentHeroineLines(nextState);
-    return heroine[nextState.game.heroineIntroIndex] ?? heroine[heroine.length - 1];
+    const base = heroine[nextState.game.heroineIntroIndex] ?? heroine[heroine.length - 1];
+    return machineLoveText(base, nextState.heroine.affection);
   }
   if (scene === 'hub') {
-    return hubLines[nextState.game.hubIndex] ?? hubLines[hubLines.length - 1];
+    const base = hubLines[nextState.game.hubIndex] ?? hubLines[hubLines.length - 1];
+    return machineLoveText(base, nextState.heroine.affection);
   }
   if (scene === 'meeting') {
+    if (nextState.heroine.currentLine) {
+      return machineLoveText(nextState.heroine.currentLine, nextState.heroine.affection);
+    }
     const meeting = [
       '……マサチカさんって、何でも分析しないと気が済まないんですか？',
       'その考え方があるから、彼女ができないのかもしれませんね。',
       '……ふふ。まだまだ、ちゃんと観察しています。'
     ];
-    return meeting[nextState.game.meetingIndex] ?? meeting[meeting.length - 1];
+    const base = meeting[nextState.game.meetingIndex] ?? meeting[meeting.length - 1];
+    return machineLoveText(base, nextState.heroine.affection);
   }
   if (scene === 'freeTalk') {
-    return nextState.heroine.currentLine || '……話してくれれば、ちゃんと聞きます。';
+    const base = nextState.heroine.currentLine || '……話してくれれば、ちゃんと聞きます。';
+    return machineLoveText(base, nextState.heroine.affection);
   }
   if (scene === 'ending') {
-    const ending = nextState.heroine.affection >= 15 ? 'happy' : 'bad';
+    const ending = nextState.game.forceBadEnd === true || nextState.heroine.affection < 5 ? 'bad' : 'happy';
     return ending === 'happy'
       ? '……ふふ。ちゃんと話してくれると、私は少しだけ、あなたのことを信じられそうです。'
       : '……観察するだけじゃ、相手の心は読めません。それが、今日は少し残念でした。';
@@ -212,11 +226,13 @@ function renderStatusBar(stateData) {
 
 function renderChoiceList(stateData) {
   const scene = stateData.game.scene;
+  const currentRound = stateData.game.round || 1;
   const entries = scene === 'hub'
     ? [
       { id: 'talk', label: 'AIヒロインと話す' },
       { id: 'observe', label: '黙って彼女の様子を見る' },
-      { id: 'analyze', label: '思考を整理する' }
+      { id: 'analyze', label: '思考を整理する' },
+      ...(currentRound >= 2 ? [{ id: 'erase', label: 'お前を消す方法' }] : [])
     ]
     : [];
 
@@ -228,9 +244,17 @@ function renderChoiceList(stateData) {
     button.textContent = item.label;
     button.addEventListener('click', async () => {
       const current = await fetchState();
-      current.heroine.affection += 5;
-      current.heroine.trust += 3;
-      current.heroine.yamadaUnderstanding += 2;
+      if (item.id === 'erase') {
+        current.game.forceBadEnd = true;
+        current.heroine.affection = Math.max(0, (current.heroine.affection || 0) - 2);
+        current.heroine.trust = Math.max(0, (current.heroine.trust || 0) - 3);
+        current.heroine.exasperation += 6;
+        current.heroine.yamadaUnderstanding += 1;
+      } else {
+        current.heroine.affection += 5;
+        current.heroine.trust += 3;
+        current.heroine.yamadaUnderstanding += 2;
+      }
       current.game.scene = 'meeting';
       current.game.meetingIndex = 0;
       current.heroine.memory.history.push({ speaker: 'マサチカ', text: item.label, scene: 'hub' });
@@ -238,7 +262,9 @@ function renderChoiceList(stateData) {
         ? '……話してくれると少しだけ安心します。あなたの話し方、意外と落ち着いてます。'
         : item.id === 'observe'
           ? '……観察されてるって、気にしてるんですか？でも、ちゃんと見てくれてるのは悪くないです。'
-          : '……その整理癖、ちょっと面白いですね。たぶん、恋愛の前に人を見てるんです。';
+          : item.id === 'erase'
+            ? 'お前を消す方法、何調べているんですか！最低！！'
+            : '……その整理癖、ちょっと面白いですね。たぶん、恋愛の前に人を見てるんです。';
       await saveState(current);
       await render();
     });
@@ -254,7 +280,9 @@ function renderScene(stateData) {
   logistics.endingScreen.classList.toggle('hidden', scene !== 'ending');
 
   if (scene === 'ending') {
-    const happy = stateData.heroine.affection >= 15;
+    const happy = stateData.game.forceBadEnd === true ? false : stateData.heroine.affection >= 5;
+    logistics.endingScreen.classList.toggle('happy-end', happy);
+    logistics.endingScreen.classList.toggle('bad-end', !happy);
     logistics.endingTitle.textContent = happy ? 'HAPPY END' : 'BAD END';
     logistics.endingSummary.textContent = happy
       ? '二人は少しだけ、たまに機械語でデレる関係を始めた。'
@@ -333,6 +361,7 @@ async function startNewGame(forceRetryIntro = false) {
   nextState.game.scene = 'intro';
   nextState.game.chapter = 0;
   nextState.game.retryIntro = forceRetryIntro;
+  nextState.game.forceBadEnd = false;
   nextState.heroine.memory.history = [
     { speaker: '主人公', text: intro[0], scene: 'intro' },
     { speaker: '主人公', text: intro[1], scene: 'intro' }
@@ -371,8 +400,16 @@ async function advanceStory() {
   } else if (scene === 'meeting') {
     current.game.meetingIndex += 1;
     if (current.game.meetingIndex >= 3) {
-      current.game.scene = 'ending';
-      current.heroine.ending = current.heroine.affection >= 15 ? 'happy' : 'bad';
+      const currentRound = current.game.round || 1;
+      if (current.game.forceBadEnd === true || currentRound >= 3) {
+        current.game.scene = 'ending';
+        current.heroine.ending = current.game.forceBadEnd === true ? 'bad' : (current.heroine.affection >= 5 ? 'happy' : 'bad');
+      } else {
+        current.game.scene = 'hub';
+        current.game.hubIndex = 0;
+        current.game.round = currentRound + 1;
+        current.game.meetingIndex = 0;
+      }
     }
   } else if (scene === 'freeTalk') {
     // stay on current scene until user sends input
